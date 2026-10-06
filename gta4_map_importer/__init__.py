@@ -54,8 +54,16 @@ if bpy is not None:
                    ("OBJECTS", "Separate objects",
                     "One object per placement (shared mesh data). Editable; best for a few areas")],
             default="INSTANCES")
-        lods: BoolProperty(name="Import LOD models instead",
-                           description="Import the low detail LOD city instead of the full detail one")
+        detail: EnumProperty(
+            name="Detail level",
+            items=[("FULL", "Full detail", "Everything, including small props"),
+                   ("HIGH", "High", "Skip tiny props under 2 m"),
+                   ("MEDIUM", "Medium", "Skip props under 8 m"),
+                   ("LOW", "Low", "GTA's low-poly LOD models plus large objects"),
+                   ("VERYLOW", "Very low", "GTA's far-distance SLOD models plus large objects")],
+            default="FULL")
+        interiors: BoolProperty(name="Interiors", default=True,
+                                description="Building interiors and subway tunnels, in their own collections")
         textures: BoolProperty(name="Textures", default=True)
         normals: BoolProperty(name="Custom normals", default=True,
                               description="Use the game's vertex normals (slower import)")
@@ -83,8 +91,9 @@ if bpy is not None:
             wm = context.window_manager
             wm.progress_begin(0, 100)
             try:
-                n = Importer(game_dir, cache, self.areas, self.lods, self.mode, self.textures,
-                             self.normals, self.quat_conjugate).run(
+                n = Importer(game_dir, cache, self.areas, False, self.mode, self.textures,
+                             self.normals, self.quat_conjugate, detail=self.detail,
+                             interiors=self.interiors).run(
                     progress=lambda f: wm.progress_update(int(f * 100)))
             except Exception as e:
                 self.report({"ERROR"}, str(e))
@@ -96,7 +105,7 @@ if bpy is not None:
 
         def draw(self, context):
             col = self.layout.column()
-            for p in ("game_dir", "areas", "mode", "lods", "textures", "normals", "cache_dir"):
+            for p in ("game_dir", "areas", "mode", "detail", "interiors", "textures", "normals", "cache_dir"):
                 col.prop(self, p)
 
     def _menu(self, context):

@@ -33,7 +33,8 @@ def main():
         bpy.data.objects.remove(ob)
     n = Importer(job["game_dir"], job["cache_dir"], job["areas"], job["lods"], job["mode"],
                  job["textures"], job["normals"],
-                 key_cache=job.get("key_cache")).run(progress=progress)
+                 key_cache=job.get("key_cache"), detail=job.get("detail"),
+                 interiors=job.get("interiors", True)).run(progress=progress)
     # the map is ~6 km across; default 1 km clip distance would hide most of it
     for screen in bpy.data.screens:
         for area in screen.areas:

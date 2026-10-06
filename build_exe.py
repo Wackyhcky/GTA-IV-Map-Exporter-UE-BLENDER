@@ -48,6 +48,7 @@ def main():
          "--name", APP,
          "--add-data", os.path.join(SRC, "gta4_map_importer") + sep + "gta4_map_importer",
          "--add-data", os.path.join(SRC, "blender_runner.py") + sep + ".",
+         "--add-data", os.path.join(SRC, "unreal_runner.py") + sep + ".",
          "--distpath", DIST,
          "--workpath", os.path.join(BUILD, "work"),
          "--specpath", BUILD,

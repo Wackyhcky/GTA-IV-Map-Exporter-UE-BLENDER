@@ -7,7 +7,7 @@ import time
 import bpy
 import numpy as np
 
-from .mapdata import GameData
+from .mapdata import GameData, model_size, select_detail, split_interiors
 
 ALPHA_SHADERS = ("alpha", "cutout", "decal", "glass", "window", "billboard", "trees", "grass", "wire")
 
@@ -18,12 +18,13 @@ def _log(msg):
 
 class Importer:
     def __init__(self, game_dir, cache_dir, areas="*", lods=False, mode="INSTANCES",
-                 textures=True, normals=True, quat_conjugate=True, key_cache=None):
+                 textures=True, normals=True, quat_conjugate=True, key_cache=None, detail=None, interiors=True):
         self.game_dir = game_dir
         self.cache_dir = cache_dir
         self.area_patterns = [a.strip().lower() for a in areas.replace(";", ",").split(",") if a.strip()] or ["*"]
-        self.lods = lods
+        self.detail = detail or ("LOW" if lods else "FULL")
         self.mode = mode
+        self.interiors = interiors
         self.textures = textures
         self.normals = normals
         self.quat_conjugate = quat_conjugate
@@ -160,20 +161,25 @@ class Importer:
                                 key_cache=self.key_cache)
         gd.load_definitions()
         gd.open_archives()
-        areas = gd.load_instances()
+        areas = gd.load_instances(interiors=self.interiors)
 
         selected = {}
         for area, insts in areas.items():
             if not self._wanted_area(area):
                 continue
-            keep = [i for i in insts if i.is_lod == self.lods and i.hash in gd.models]
+            keep = select_detail(gd, insts, area, self.detail)
             if keep:
                 selected[area] = keep
-        total = sum(len(v) for v in selected.values())
-        if not total:
+        if not selected:
             raise RuntimeError("No placements matched areas '%s'" % ",".join(self.area_patterns))
-        hashes = sorted({i.hash for v in selected.values() for i in v})
-        _log("Importing %d placements of %d models from %d areas" % (total, len(hashes), len(selected)))
+        selected = split_interiors(selected)
+        need = {}  # model -> smallest size any of its placements accepts
+        for v in selected.values():
+            for i, min_size in v:
+                need[i.hash] = min(need.get(i.hash, min_size), min_size)
+        hashes = sorted(need)
+        _log("Detail level %s: %d candidate placements of %d models from %d areas"
+             % (self.detail, sum(len(v) for v in selected.values()), len(hashes), len(selected)))
 
         root = bpy.data.collections.new("GTA IV Map")
         bpy.context.scene.collection.children.link(root)
@@ -181,6 +187,7 @@ class Importer:
         root.children.link(lib)
 
         meshes = {}
+        sizes = {}
         lib_objects = {}
         for n, h in enumerate(hashes):
             mdef = gd.models[h]
@@ -190,13 +197,22 @@ class Importer:
                 _log("Failed to read %s: %s" % (mdef.name, e))
                 mesh = None
             if mesh is not None:
-                meshes[h] = self._build_mesh(mdef, mesh)
+                size = model_size(mesh)
+                if size >= need[h]:
+                    meshes[h] = self._build_mesh(mdef, mesh)
+                    sizes[h] = size
             if progress:
                 progress(0.8 * n / len(hashes))
             if n % 500 == 0:
                 _log("  models %d / %d  (%.0fs)" % (n, len(hashes), time.time() - t0))
         self._txd_cache.clear()
         self._wdd_cache.clear()
+        # drop placements whose model is smaller than this level allows
+        selected = {a: [i for i, min_size in v if i.hash in meshes and sizes[i.hash] >= min_size]
+                    for a, v in selected.items()}
+        selected = {a: v for a, v in selected.items() if v}
+        total = sum(len(v) for v in selected.values())
+        _log("Placing %d objects" % total)
 
         if self.mode == "INSTANCES":
             lib_index = {}
